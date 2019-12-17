@@ -20,6 +20,7 @@ namespace Microsoft.Azure.ServiceBus.Primitives
     // - If an item is due to be removed and is updated while the cleanup thread tries to remove it a snapshot value is used by going through the collection interface
     // Caveat (but highly unlikely):
     // Due to the field exchange, we might miss a TrySetResult on the old TCS and therefore would not run the cleanup again until the next add or update comes. Another contributing factor of this being unlikely is the fact that async statemachinery acquires a full fence semantics by design
+    // See PR https://github.com/Azure/azure-sdk-for-net/pull/6577
     sealed class ConcurrentExpiringSetAfter<TKey>
     {
         readonly ConcurrentDictionary<TKey, DateTime> dictionary;
