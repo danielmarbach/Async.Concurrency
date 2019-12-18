@@ -7,6 +7,7 @@ namespace Microsoft.Azure.ServiceBus.Primitives
     using System.Collections.Concurrent;
     using System.Threading.Tasks;
 
+#region You Gotta Have these
     // Data structure that is used to track LockTokens of deferred messages that are received with
     // messageReceiver.ReceiveDeferredMessageAsync(). Lock tockens for those received messages are tracked
     // together with their corresponding LockUntilUTC datetime in the set. When a user calls CompleteAsync for all the tokens
@@ -18,6 +19,7 @@ namespace Microsoft.Azure.ServiceBus.Primitives
     // - Double scheduling with Task.Run for an async operations (increases worker thread pool pressure)
     // - Race between AddOrUpdate and a cleanup interval can remove freshly updated entries because they are seen as outdated by the cleanup loop
     //   currently prevented by the locking semantics of .Keys but could become an issue of the semantics are changed in the framework due to optimizations
+#endregion
     sealed class ConcurrentExpiringSetBefore<TKey>
     {
         readonly ConcurrentDictionary<TKey, DateTime> dictionary;
@@ -25,29 +27,23 @@ namespace Microsoft.Azure.ServiceBus.Primitives
         bool cleanupScheduled;
         static TimeSpan delayBetweenCleanups = TimeSpan.FromSeconds(10);  // changed from 30 to 10 for demo purposes
 
-        public ConcurrentExpiringSetBefore()
-        {
+        public ConcurrentExpiringSetBefore() {
             this.dictionary = new ConcurrentDictionary<TKey, DateTime>();
         }
 
-        public void AddOrUpdate(TKey key, DateTime expiration)
-        {
+        public void AddOrUpdate(TKey key, DateTime expiration) {
             this.dictionary[key] = expiration;
             Console.Write($"+{key}");
             this.ScheduleCleanup();
         }
 
-        public bool Contains(TKey key)
-        {
+        public bool Contains(TKey key) {
             return this.dictionary.TryGetValue(key, out var expiration) && expiration > DateTime.UtcNow;
         }
 
-        void ScheduleCleanup()
-        {
-            lock (this.cleanupSynObject)
-            {
-                if (this.cleanupScheduled || this.dictionary.Count <= 0)
-                {
+        void ScheduleCleanup() {
+            lock (this.cleanupSynObject) {
+                if (this.cleanupScheduled || this.dictionary.Count <= 0) {
                     return;
                 }
 
@@ -56,19 +52,15 @@ namespace Microsoft.Azure.ServiceBus.Primitives
             }
         }
 
-        async Task CollectExpiredEntriesAsync()
-        {
+        async Task CollectExpiredEntriesAsync() {
             await Task.Delay(delayBetweenCleanups);
 
-            lock (this.cleanupSynObject)
-            {
+            lock (this.cleanupSynObject) {
                 this.cleanupScheduled = false;
             }
 
-            foreach (var key in this.dictionary.Keys)
-            {
-                if (DateTime.UtcNow > this.dictionary[key])
-                {
+            foreach (var key in this.dictionary.Keys) {
+                if (DateTime.UtcNow > this.dictionary[key]) {
                     this.dictionary.TryRemove(key, out _);
                     Console.Write($"-{key}");
                 }

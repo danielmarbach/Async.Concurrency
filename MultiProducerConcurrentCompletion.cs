@@ -28,8 +28,7 @@ namespace NServiceBus.AzureServiceBus
     // - Has FIFO semantics instead of LIFO
     class MultiProducerConcurrentCompletion<TItem>
     {
-        public MultiProducerConcurrentCompletion(int batchSize, TimeSpan pushInterval, int maxConcurrency, int numberOfSlots)
-        {
+        public MultiProducerConcurrentCompletion(int batchSize, TimeSpan pushInterval, int maxConcurrency, int numberOfSlots) {
             this.maxConcurrency = maxConcurrency;
             this.pushInterval = pushInterval;
             this.batchSize = batchSize;
@@ -38,15 +37,13 @@ namespace NServiceBus.AzureServiceBus
             queues = new ConcurrentQueue<TItem>[numberOfSlots];
             itemListBuffer = new ConcurrentQueue<List<TItem>>();
 
-            for (var i = 0; i < numberOfSlots; i++)
-            {
+            for (var i = 0; i < numberOfSlots; i++) {
                 queues[i] = new ConcurrentQueue<TItem>();
             }
 
             var maxNumberOfCurrentOperationsPossible = numberOfSlots * maxConcurrency;
 
-            for (var i = 0; i < maxNumberOfCurrentOperationsPossible; i++)
-            {
+            for (var i = 0; i < maxNumberOfCurrentOperationsPossible; i++) {
                 itemListBuffer.Enqueue(new List<TItem>(batchSize));
             }
 
@@ -57,8 +54,7 @@ namespace NServiceBus.AzureServiceBus
         /// Specifies a pump function. As soon as items are available pumping begins within the specified constraints
         /// </summary>
         /// <remarks>This member is not thread safe.</remarks>
-        public void Start(Func<List<TItem>, int, object, CancellationToken, Task> pump)
-        {
+        public void Start(Func<List<TItem>, int, object, CancellationToken, Task> pump) {
             Start(pump, null);
         }
 
@@ -66,10 +62,8 @@ namespace NServiceBus.AzureServiceBus
         /// Specifies a pump function. As soon as items are available pumping begins within the specified constraints
         /// </summary>
         /// <remarks>This member is not thread safe.</remarks>
-        public void Start(Func<List<TItem>, int, object, CancellationToken, Task> pump, object state)
-        {
-            if (started)
-            {
+        public void Start(Func<List<TItem>, int, object, CancellationToken, Task> pump, object state) {
+            if (started) {
                 throw new InvalidOperationException("Already started");
             }
 
@@ -86,10 +80,8 @@ namespace NServiceBus.AzureServiceBus
         /// <param name="item">The item to be pushed.</param>
         /// <param name="slotNumber">The slot number which is zero based.</param>
         /// <remarks>This member is thread safe.</remarks>
-        public void Push(TItem item, int slotNumber)
-        {
-            if (slotNumber >= numberOfSlots)
-            {
+        public void Push(TItem item, int slotNumber) {
+            if (slotNumber >= numberOfSlots) {
                 throw new ArgumentOutOfRangeException(nameof(slotNumber), $"Slot number must be between 0 and {numberOfSlots - 1}.");
             }
 
@@ -97,8 +89,7 @@ namespace NServiceBus.AzureServiceBus
 
             var incrementedCounter = Interlocked.Increment(ref numberOfPushedItems);
 
-            if (incrementedCounter > batchSize)
-            {
+            if (incrementedCounter > batchSize) {
                 batchSizeReached.TrySetResult(true);
             }
         }
@@ -114,34 +105,26 @@ namespace NServiceBus.AzureServiceBus
         /// Specifying <c>false</c> will empty the slots without pushing.
         /// </param>
         /// <remarks>This member is not thread safe.</remarks>
-        public async Task Complete(bool drain = true)
-        {
-            if (started)
-            {
+        public async Task Complete(bool drain = true) {
+            if (started) {
                 tokenSource.Cancel();
                 await timer.ConfigureAwait(false);
 
-                if (drain)
-                {
-                    do
-                    {
+                if (drain) {
+                    do {
                         await PushInBatches().ConfigureAwait(false);
                     } while (Interlocked.Read(ref numberOfPushedItems) > 0);
                 }
 
-
                 tokenSource.Dispose();
             }
 
-            foreach (var queue in queues)
-            {
-                if (queue.IsEmpty)
-                {
+            foreach (var queue in queues) {
+                if (queue.IsEmpty) {
                     continue;
                 }
 
-                while (queue.TryDequeue(out var _))
-                {
+                while (queue.TryDequeue(out var _)) {
                 }
             }
 
@@ -152,13 +135,10 @@ namespace NServiceBus.AzureServiceBus
             tokenSource = null;
         }
 
-        async Task TimerLoop()
-        {
+        async Task TimerLoop() {
             var token = tokenSource.Token;
-            while (!tokenSource.IsCancellationRequested)
-            {
-                try
-                {
+            while (!tokenSource.IsCancellationRequested) {
+                try {
                     await Task.WhenAny(Task.Delay(pushInterval, token), batchSizeReached.Task).ConfigureAwait(false);
                     /* This will always successfully complete the batchSizeReached task completion source
                      * The benefit of this is that we don't need a cancellation token registration since during
@@ -168,52 +148,41 @@ namespace NServiceBus.AzureServiceBus
                     batchSizeReached.TrySetResult(true);
                     batchSizeReached = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                     await PushInBatches().ConfigureAwait(false);
-                }
-                catch (Exception)
-                {
+                } catch (Exception) {
                     // intentionally ignored
                 }
             }
         }
 
-        Task PushInBatches()
-        {
-            if (Interlocked.Read(ref numberOfPushedItems) == 0)
-            {
+        Task PushInBatches() {
+            if (Interlocked.Read(ref numberOfPushedItems) == 0) {
                 return Task.CompletedTask;
             }
 
-            for (var i = 0; i < numberOfSlots; i++)
-            {
+            for (var i = 0; i < numberOfSlots; i++) {
                 var queue = queues[i];
 
                 PushInBatchesUpToConcurrencyPerQueueForAGivenSlot(queue, i, pushTasks);
             }
 
-            return Task.WhenAll(pushTasks).ContinueWith((t, s) =>
-            {
+            return Task.WhenAll(pushTasks).ContinueWith((t, s) => {
                 var tasks = (List<Task>)s;
                 tasks.Clear();
             }, pushTasks, TaskContinuationOptions.ExecuteSynchronously);
         }
 
-        void PushInBatchesUpToConcurrencyPerQueueForAGivenSlot(ConcurrentQueue<TItem> queue, int currentSlotNumber, List<Task> tasks)
-        {
+        void PushInBatchesUpToConcurrencyPerQueueForAGivenSlot(ConcurrentQueue<TItem> queue, int currentSlotNumber, List<Task> tasks) {
             int numberOfItems;
             var concurrency = 1;
-            do
-            {
+            do {
                 numberOfItems = 0;
                 List<TItem> items = null;
-                for (var i = 0; i < batchSize; i++)
-                {
-                    if (!queue.TryDequeue(out var item))
-                    {
+                for (var i = 0; i < batchSize; i++) {
+                    if (!queue.TryDequeue(out var item)) {
                         break;
                     }
 
-                    if (items == null && !itemListBuffer.TryDequeue(out items))
-                    {
+                    if (items == null && !itemListBuffer.TryDequeue(out items)) {
                         items = new List<TItem>(batchSize);
                     }
 
@@ -221,16 +190,14 @@ namespace NServiceBus.AzureServiceBus
                     numberOfItems++;
                 }
 
-                if (numberOfItems <= 0)
-                {
+                if (numberOfItems <= 0) {
                     return;
                 }
 
                 Interlocked.Add(ref numberOfPushedItems, -numberOfItems);
                 concurrency++;
 
-                var task = pump(items, currentSlotNumber, state, tokenSource.Token).ContinueWith((t, taskState) =>
-                {
+                var task = pump(items, currentSlotNumber, state, tokenSource.Token).ContinueWith((t, taskState) => {
                     var itemListAndListBuffer = (ValueTuple<List<TItem>, ConcurrentQueue<List<TItem>>>)taskState;
                     itemListAndListBuffer.Item1.Clear();
                     itemListAndListBuffer.Item2.Enqueue(itemListAndListBuffer.Item1);
